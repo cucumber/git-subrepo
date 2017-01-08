@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 #
-# Copyright 2013-2016 - Ingy döt Net <ingy@ingy.net>
+# Copyright 2013-2017 - Ingy döt Net <ingy@ingy.net>
 #
 
 
@@ -55,7 +55,7 @@ Options:
 h           Show the command summary
 help        Help overview
 version     Print the git-subrepo version number
- 
+
 a,all       Perform command on all current subrepos
 A,ALL       Perform command on all subrepos and subsubrepos
 b,branch=   Specify the upstream branch to push/pull/fetch
@@ -68,7 +68,7 @@ r,remote=   Specify the upstream remote to push/pull/fetch
 R,rebase    Rebase commits (rather than merge) on pull
 s,squash    Squash commits on push
 u,update    Add the --branch and/or --remote overrides to .gitrepo
- 
+
 q,quiet     Show minimal output
 v,verbose   Show verbose output
 d,debug     Show the actual commands used
@@ -360,7 +360,7 @@ command:help() {
 command:version() {
   cat <<...
 git-subrepo Version: $VERSION
-Copyright 2013-2016 Ingy döt Net
+Copyright 2013-2017 Ingy döt Net
 https://github.com/git-commands/git-subrepo
 $BASH_SOURCE
 Git Version: $git_version
@@ -771,6 +771,69 @@ subrepo:commit() {
   git:make-ref "$refs_subrepo_commit" "$subrepo_commit_ref"
 }
 
+subrepo:merge-base() {
+  local merge_base_order=()
+  local counter=0
+  # If you only want to list all possible ancestors
+  local list_all=$3
+  ((merge_counter++))
+  local source="source$merge_counter"
+  local target="target$merge_counter"
+
+  prepare-merge-base "$source" "$1" true
+  local first_commit_on_source="$branch_first_commit"
+  prepare-merge-base "$target" "$2" false
+  local first_commit_on_target="$branch_first_commit"
+
+  for entry in ${merge_base_order[@]}; do
+    local source_key="${source}_$entry"
+    local source_value="${!source_key}"
+    if [[ ${#source_value} -gt 40 ]]; then
+      if $list_all; then
+        say "Multiple on $1: $source_value"
+      fi
+    else
+      local target_key="${target}_$entry"
+      if [ -z ${!target_key+x} ]; then
+        # We didn't find it on the target side
+        :
+      else
+        local target_value=${!target_key};
+        if [[ ${#target_value} -gt 40 ]]; then
+          if $list_all; then
+            say "Multiple on $2: $target_value"
+          fi
+        else
+          o "Found ancestor: ${!source_key},${!target_key}"
+          o "Steps from HEAD: $counter"
+          new_parent="${!source_key}"
+          old_parent="${!target_key}"
+          if [[ $new_parent == $first_commit_on_source ]]; then
+            first_on_source="HEAD"
+          else
+            first_on_source=""
+          fi
+          if [[ $old_parent == $first_commit_on_target ]]; then
+            first_on_target="HEAD"
+          else
+            first_on_target=""
+          fi
+
+          if $list_all; then
+            say "Valid: $new_parent = $old_parent"
+          else
+            # We found the first ancestor
+            return 0
+          fi
+        fi
+      fi
+    fi
+    ((counter++));
+  done
+  o "No ancestor found";
+  return 1
+}
+
 subrepo:status() {
   if [[ ${#command_arguments[@]} -eq 0 ]]; then
     get-all-subrepos
@@ -1049,7 +1112,7 @@ get-params() {
   local num=${#command_arguments[@]}
   for arg in $@; do
     # If arg starts with '+' then it is required
-    if [[ $arg =~ ^\+ ]]; then
+    if (shopt -s compat31&>/dev/null||:; [[ $arg =~ ^\\+ ]]); then
       if [[ $i -ge $num ]]; then
         usage-error "Command '$command' requires arg '${arg#+}'."
       fi
